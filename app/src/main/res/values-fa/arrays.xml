@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="number_positions">
+        <item>@string/position_right</item>
+        <item>@string/position_left</item>
+        <item>@string/position_below</item>
+        <item>@string/position_above</item>
+        <item>@string/position_nearest</item>
+    </string-array>
+</resources>
