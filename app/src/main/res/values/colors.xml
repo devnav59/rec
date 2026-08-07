@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="blue_900">#0B3558</color>
+    <color name="blue_700">#1769AA</color>
+    <color name="blue_100">#D7ECFF</color>
+    <color name="surface">#F7F9FC</color>
+    <color name="ink">#17212B</color>
+    <color name="muted">#5F6B76</color>
+    <color name="warning_bg">#FFF4D6</color>
+    <color name="warning_ink">#6C4B00</color>
+</resources>
