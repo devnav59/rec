@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
@@ -28,7 +27,6 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
-import android.widget.Toast
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -127,7 +125,7 @@ class ScreenMonitorService : Service() {
         // Initialize change gates for each marker
         changeGates.clear()
         lastValues.clear()
-        requestedConfig.markers.forEach { marker ->
+        repeat(requestedConfig.markers.size) {
             changeGates.add(ValueChangeGate(requiredConsecutiveReads = 2))
             lastValues.add("")
         }
@@ -273,29 +271,20 @@ class ScreenMonitorService : Service() {
 
         detections.forEachIndexed { index, detection ->
             if (detection.found) {
-                // Show value in overlay
-                val englishValue = NumberParser.toEnglishFormat(detection.value)
+                val englishValue = detection.value
                 overlay?.showValueForMarker(index, detection.markerText, englishValue)
+                displayLines.add(
+                    getString(R.string.floating_value_format, detection.markerText, englishValue)
+                )
 
-                // Check for changes using the gate
-                val change = changeGates[index].offer(englishValue) ?: return@forEachIndexed
-
-                if (change.isInitial) {
+                val change = changeGates[index].offer(englishValue)
+                if (change != null) {
                     lastValues[index] = englishValue
-                } else {
-                    lastValues[index] = englishValue
-
-                    // Update notification
-                    notificationManager.notify(NOTIFICATION_ID, buildNotification())
-
-                    // Speak if not muted and not initial (or initial announcement enabled)
-                    if (!muted && config?.announceInitialValue == true && change.isInitial) {
-                        speak(englishValue, true, index)
-                    } else if (!muted && !change.isInitial) {
-                        speak(englishValue, false, index)
+                    val shouldAnnounce = !change.isInitial || config?.announceInitialValue == true
+                    if (!muted && shouldAnnounce) {
+                        speak(englishValue, change.isInitial, index)
                     }
                 }
-                displayLines.add(getString(R.string.floating_value_format, detection.markerText, englishValue))
             } else {
                 allFound = false
                 changeGates[index].miss()
@@ -322,7 +311,6 @@ class ScreenMonitorService : Service() {
 
     private fun handleNoDetection(hasImageAnchor: Boolean) {
         if (!monitoring) return
-        overlay?.showSearching()
         reportTransient(
             getString(
                 if (hasImageAnchor) R.string.service_number_not_found else R.string.service_anchor_not_found

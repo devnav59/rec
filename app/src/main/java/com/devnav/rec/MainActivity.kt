@@ -34,8 +34,9 @@ class MainActivity : Activity() {
     private lateinit var announceInitialCheckBox: CheckBox
     private lateinit var statusText: TextView
 
-    private var markerViews: MutableList<MarkerItemView> = mutableListOf()
+    private val markerViews = mutableListOf<MarkerItemView>()
     private var pendingConfig: MonitorConfig? = null
+    private var pendingImageMarker: MarkerItemView? = null
     private var receiverRegistered = false
 
     private val monitorStatusReceiver = object : BroadcastReceiver() {
@@ -130,15 +131,8 @@ class MainActivity : Activity() {
             markerView.setMarker(existing)
         }
 
-        // Set position spinner for all markers (shared setting)
-        positionSpinner.setSelection(preferences.getInt(KEY_POSITION, 0).coerceIn(0, 4))
-
-        // Update positions for all markers
-        updateAllMarkerPositions()
-
-        // Request focus on new marker's text field
         if (existing == null) {
-            markerView.markerEditText.requestFocus()
+            markerView.requestMarkerFocus()
         }
     }
 
@@ -147,7 +141,8 @@ class MainActivity : Activity() {
             statusText.text = getString(R.string.error_no_markers)
             return
         }
-        markerViews.removeAt(markerIndex)
+        val removedMarker = markerViews.removeAt(markerIndex)
+        if (pendingImageMarker === removedMarker) pendingImageMarker = null
         markersContainer.removeAllViews()
         // Rebuild marker list with updated indices
         markerViews.forEachIndexed { index, markerView ->
@@ -155,12 +150,6 @@ class MainActivity : Activity() {
             markerView.updateTitle()
             markersContainer.addView(markerView.root)
         }
-    }
-
-    private fun updateAllMarkerPositions() {
-        val position = positionSpinner.selectedItemPosition.coerceIn(0, 4)
-        val positionEnum = RelativePosition.values()[position]
-        markerViews.forEach { it.setPosition(positionEnum) }
     }
 
     private fun beginMonitoringFlow() {
@@ -213,16 +202,16 @@ class MainActivity : Activity() {
             }
 
             REQUEST_TEMPLATE_IMAGE -> {
-                if (resultCode != RESULT_OK) return
+                val targetMarker = pendingImageMarker
+                pendingImageMarker = null
+                if (resultCode != RESULT_OK || targetMarker == null || targetMarker !in markerViews) return
+
                 val uri = data?.data ?: return
                 val persistedFlags = data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
                 runCatching {
                     contentResolver.takePersistableUriPermission(uri, persistedFlags)
                 }
-                // Update the last marker's template URI
-                if (markerViews.isNotEmpty()) {
-                    markerViews.last().setTemplateUri(uri.toString())
-                }
+                targetMarker.setTemplateUri(uri.toString())
             }
         }
     }
@@ -242,17 +231,13 @@ class MainActivity : Activity() {
             return null
         }
 
-        val markers = markerViews.map { it.collectMarker() }.filter { it != null }
-        if (markers.isEmpty()) {
-            statusText.text = getString(R.string.error_no_markers)
-            return null
-        }
+        val collectedMarkers = markerViews.map { it.collectMarker() }
+        if (collectedMarkers.any { it == null }) return null
+        val markers = collectedMarkers.filterNotNull()
 
         val interval = scanIntervalEditText.text?.toString()?.toLongOrNull()
             ?.coerceIn(200L, 5_000L) ?: 900L
         scanIntervalEditText.setText(interval.toString())
-
-        val position = RelativePosition.values()[positionSpinner.selectedItemPosition.coerceIn(0, 4)]
 
         return MonitorConfig(
             markers = markers,
@@ -315,7 +300,6 @@ class MainActivity : Activity() {
         }
 
         fun setMarker(config: MarkerConfig) {
-            index = config.markerText.hashCode() // Just for identification
             templateUri = config.templateUri
             markerEditText.setText(config.markerText)
             markerModeGroup.check(
@@ -326,9 +310,8 @@ class MainActivity : Activity() {
             updateTitle()
         }
 
-        fun setPosition(position: RelativePosition) {
-            // Position is now shared across all markers, but stored per-marker for config
-            // This is handled by the shared spinner
+        fun requestMarkerFocus() {
+            markerEditText.requestFocus()
         }
 
         fun setTemplateUri(uri: String) {
@@ -344,7 +327,7 @@ class MainActivity : Activity() {
             markerEditText.error = null
         }
 
-        private fun updateTitle() {
+        fun updateTitle() {
             markerTitle.text = getString(R.string.marker_item_title, index + 1)
         }
 
@@ -355,11 +338,14 @@ class MainActivity : Activity() {
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
             }
-            // Use current marker's image picker
-            startActivityForResult(Intent.createChooser(intent, getString(R.string.image_picker_title)), REQUEST_TEMPLATE_IMAGE + index)
+            pendingImageMarker = this
+            startActivityForResult(
+                Intent.createChooser(intent, getString(R.string.image_picker_title)),
+                REQUEST_TEMPLATE_IMAGE
+            )
         }
 
-        private fun collectMarker(): MarkerConfig? {
+        fun collectMarker(): MarkerConfig? {
             val markerMode = if (markerModeGroup.checkedRadioButtonId == R.id.imageMarkerMode) MarkerMode.IMAGE else MarkerMode.TEXT
             val markerText = markerEditText.text?.toString().orEmpty().trim()
 

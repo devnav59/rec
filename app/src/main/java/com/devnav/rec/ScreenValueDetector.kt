@@ -49,7 +49,7 @@ data class MarkerResult(
  * It deliberately does not parse to Double, so large counters keep all of their digits.
  */
 object NumberParser {
-    private val numberPattern = Regex("""[+-]?\d(?:[\\d,.]*\d)?""")
+    private val numberPattern = Regex("""[+-]?\d(?:[\d,.]*\d)?""")
 
     fun extract(text: String): List<NumberMatch> {
         val normalized = normalizeCharacters(text)
@@ -152,46 +152,24 @@ object ScreenValueDetector {
         tokens: List<OcrToken>,
         markers: List<MarkerConfig>,
         imageAnchor: Bounds?
-    ): List<MarkerResult> {
-        return markers.mapIndexed { index, marker ->
-            detectForMarker(tokens, index, marker, imageAnchor)
-        }
-    }
-
-    private fun detectForMarker(
-        tokens: List<OcrToken>,
-        markerIndex: Int,
-        marker: MarkerConfig,
-        imageAnchor: Bounds?
-    ): MarkerResult {
+    ): List<MarkerResult> = markers.map { marker ->
         val detection = when (marker.markerMode) {
-            MarkerMode.TEXT -> {
-                val markerKey = compact(marker.markerText)
-                if (markerKey.isEmpty()) {
-                    NumberDetection("0", "0", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
-                } else {
-                    val anchors = tokens.filter { compact(it.text).contains(markerKey) }
-                    if (anchors.isEmpty()) {
-                        NumberDetection("", "", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
-                    } else {
-                        findForAnchors(tokens, anchors, marker.relativePosition, markerKey)
-                    }
-                }
-            }
-            MarkerMode.IMAGE -> {
-                imageAnchor?.let { anchor ->
-                    findForAnchors(
-                        tokens = tokens,
-                        anchors = listOf(OcrToken(text = "", bounds = anchor)),
-                        position = marker.relativePosition,
-                        exactMarkerKey = null
-                    )
-                } ?: NumberDetection("", "", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
+            MarkerMode.TEXT -> findByText(
+                tokens = tokens,
+                markerText = marker.markerText,
+                position = marker.relativePosition
+            )
+
+            MarkerMode.IMAGE -> imageAnchor?.let { anchor ->
+                findNearAnchor(
+                    tokens = tokens,
+                    anchorBounds = anchor,
+                    position = marker.relativePosition
+                )
             }
         }
 
-        val value = detection.value
-        return if (value.isEmpty()) {
+        if (detection == null) {
             MarkerResult(
                 markerText = marker.markerText,
                 value = "",
@@ -201,7 +179,7 @@ object ScreenValueDetector {
         } else {
             MarkerResult(
                 markerText = marker.markerText,
-                value = NumberParser.toEnglishFormat(value),
+                value = detection.value,
                 rawValue = detection.rawValue,
                 found = true
             )

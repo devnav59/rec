@@ -2,7 +2,9 @@
 <resources>
     <color name="blue_900">#0B3558</color>
     <color name="blue_700">#1769AA</color>
+    <color name="blue_500">#2684C7</color>
     <color name="blue_100">#D7ECFF</color>
+    <color name="red_500">#C62828</color>
     <color name="surface">#F7F9FC</color>
     <color name="ink">#17212B</color>
     <color name="muted">#5F6B76</color>
