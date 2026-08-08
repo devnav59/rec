@@ -327,7 +327,7 @@ class MainActivity : Activity() {
             markerEditText.error = null
         }
 
-        private fun updateTitle() {
+        fun updateTitle() {
             markerTitle.text = getString(R.string.marker_item_title, index + 1)
         }
 
@@ -345,7 +345,7 @@ class MainActivity : Activity() {
             )
         }
 
-        private fun collectMarker(): MarkerConfig? {
+        fun collectMarker(): MarkerConfig? {
             val markerMode = if (markerModeGroup.checkedRadioButtonId == R.id.imageMarkerMode) MarkerMode.IMAGE else MarkerMode.TEXT
             val markerText = markerEditText.text?.toString().orEmpty().trim()
 
