@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/subtitle"
+            android:text="@string/subtitle_multi"
             android:textColor="@color/muted"
             android:textSize="16sp" />
 
@@ -39,102 +39,32 @@
             android:textColor="@color/warning_ink"
             android:textSize="14sp" />
 
-        <LinearLayout
+        <!-- Markers List Header -->
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
-            android:background="@drawable/bg_card"
-            android:elevation="1dp"
-            android:orientation="vertical">
+            android:text="@string/section_markers_multi"
+            android:textColor="@color/blue_900"
+            android:textSize="18sp"
+            android:textStyle="bold" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/section_anchor"
-                android:textColor="@color/blue_900"
-                android:textSize="18sp"
-                android:textStyle="bold" />
+        <LinearLayout
+            android:id="@+id/markersContainer"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
 
-            <RadioGroup
-                android:id="@+id/markerModeGroup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:orientation="vertical">
+        <Button
+            android:id="@+id/addMarkerButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/add_marker"
+            android:backgroundTint="@color/blue_500" />
 
-                <RadioButton
-                    android:id="@+id/textMarkerMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="@string/mode_text" />
-
-                <RadioButton
-                    android:id="@+id/imageMarkerMode"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/mode_image" />
-            </RadioGroup>
-
-            <LinearLayout
-                android:id="@+id/textModeContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <EditText
-                    android:id="@+id/markerEditText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:autofillHints=""
-                    android:hint="@string/marker_hint"
-                    android:importantForAutofill="no"
-                    android:inputType="text"
-                    android:maxLines="1" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/marker_help"
-                    android:textColor="@color/muted"
-                    android:textSize="13sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/imageModeContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <Button
-                    android:id="@+id/chooseImageButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="@string/choose_image" />
-
-                <TextView
-                    android:id="@+id/imageUriText"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/no_image_selected"
-                    android:textColor="@color/muted"
-                    android:textSize="13sp" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="@string/image_help"
-                    android:textColor="@color/muted"
-                    android:textSize="13sp" />
-            </LinearLayout>
-        </LinearLayout>
-
+        <!-- Number Position (shared for all markers) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -181,6 +111,7 @@
                 android:text="@string/announce_initial" />
         </LinearLayout>
 
+        <!-- Start/Stop Section -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
