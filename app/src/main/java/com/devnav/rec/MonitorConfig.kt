@@ -68,7 +68,7 @@ object MonitorConfigSerializer {
                 MarkerMode.TEXT
             )
             val markerText = item.optString(KEY_TEXT).trim()
-            val templateUri = item.optString(KEY_URI).trim().ifEmpty { null }
+            val templateUri = item.optString(KEY_URI).trim().takeIf { it.isNotEmpty() }
             val relativePosition = enumValueOrDefault(
                 item.optString(KEY_POSITION),
                 RelativePosition.RIGHT
