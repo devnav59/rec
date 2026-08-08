@@ -1,6 +1,8 @@
 package com.devnav.rec
 
 import android.content.Intent
+import org.json.JSONArray
+import org.json.JSONObject
 
 /** How the moving anchor is located on the captured screen. */
 enum class MarkerMode {
@@ -32,13 +34,81 @@ data class MonitorConfig(
     val announceInitialValue: Boolean
 )
 
-/** Holds a detected value for a specific marker. */
-data class MarkerDetection(
-    val markerIndex: Int,
-    val markerText: String,
-    val value: String,
-    val rawValue: String
-)
+/** Serializes monitor settings for both SharedPreferences and the service Intent. */
+object MonitorConfigSerializer {
+    fun toJson(config: MonitorConfig): String {
+        val markers = JSONArray()
+        config.markers.forEach { marker ->
+            markers.put(
+                JSONObject().apply {
+                    put(KEY_TEXT, marker.markerText)
+                    put(KEY_MODE, marker.markerMode.name)
+                    put(KEY_POSITION, marker.relativePosition.name)
+                    marker.templateUri?.let { put(KEY_URI, it) }
+                }
+            )
+        }
+
+        return JSONObject().apply {
+            put(KEY_MARKERS, markers)
+            put(KEY_INTERVAL, config.scanIntervalMs)
+            put(KEY_ANNOUNCE, config.announceInitialValue)
+        }.toString()
+    }
+
+    fun fromJson(json: String): MonitorConfig? = runCatching {
+        val root = JSONObject(json)
+        val markerArray = root.optJSONArray(KEY_MARKERS) ?: return null
+        val markers = ArrayList<MarkerConfig>(markerArray.length())
+
+        for (index in 0 until markerArray.length()) {
+            val item = markerArray.optJSONObject(index) ?: return null
+            val markerMode = enumValueOrDefault(
+                item.optString(KEY_MODE),
+                MarkerMode.TEXT
+            )
+            val markerText = item.optString(KEY_TEXT).trim()
+            val templateUri = item.optString(KEY_URI).trim().ifEmpty { null }
+            val relativePosition = enumValueOrDefault(
+                item.optString(KEY_POSITION),
+                RelativePosition.RIGHT
+            )
+
+            if (markerMode == MarkerMode.TEXT && markerText.isEmpty()) return null
+            if (markerMode == MarkerMode.IMAGE && templateUri == null) return null
+
+            markers += MarkerConfig(
+                markerText = markerText,
+                markerMode = markerMode,
+                templateUri = templateUri,
+                relativePosition = relativePosition
+            )
+        }
+
+        if (markers.isEmpty()) return null
+
+        MonitorConfig(
+            markers = markers,
+            scanIntervalMs = root.optLong(KEY_INTERVAL, DEFAULT_INTERVAL_MS)
+                .coerceIn(MIN_INTERVAL_MS, MAX_INTERVAL_MS),
+            announceInitialValue = root.optBoolean(KEY_ANNOUNCE, false)
+        )
+    }.getOrNull()
+
+    private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, default: T): T =
+        enumValues<T>().firstOrNull { it.name == value } ?: default
+
+    private const val KEY_MARKERS = "markers"
+    private const val KEY_TEXT = "text"
+    private const val KEY_MODE = "mode"
+    private const val KEY_POSITION = "pos"
+    private const val KEY_URI = "uri"
+    private const val KEY_INTERVAL = "interval"
+    private const val KEY_ANNOUNCE = "announce"
+    private const val DEFAULT_INTERVAL_MS = 900L
+    private const val MIN_INTERVAL_MS = 200L
+    private const val MAX_INTERVAL_MS = 5_000L
+}
 
 /** Intent contract shared by the activity and the foreground service. */
 object MonitorContract {
@@ -59,77 +129,5 @@ object MonitorContract {
     fun configFrom(intent: Intent): MonitorConfig? {
         val json = intent.getStringExtra(EXTRA_CONFIG_JSON) ?: return null
         return MonitorConfigSerializer.fromJson(json)
-    }
-
-    private object MonitorConfigSerializer {
-        // Simple JSON serialization without external dependencies
-        fun toJson(config: MonitorConfig): String {
-            val markersJson = config.markers.joinToString(",") { marker ->
-                """{"text":"${escapeJson(marker.markerText)}","mode":"${marker.markerMode.name}","pos":"${marker.relativePosition.name}","uri":"${escapeJson(marker.templateUri ?: "")}"}"""
-            }
-            return """{"markers":[$markersJson],"interval":${config.scanIntervalMs},"announce":${if (config.announceInitialValue) 1 else 0}}"""
-        }
-
-        fun fromJson(json: String): MonitorConfig? {
-            try {
-                val markers = parseMarkerArray(json) ?: return null
-                val interval = extractJsonLong(json, "interval", 900L).coerceIn(200L, 5_000L)
-                val announce = extractJsonInt(json, "announce", 0) == 1
-                return MonitorConfig(
-                    markers = markers,
-                    scanIntervalMs = interval,
-                    announceInitialValue = announce
-                )
-            } catch (e: Exception) {
-                return null
-            }
-        }
-
-        private fun parseMarkerArray(json: String): List<MarkerConfig>? {
-            val startMarker = json.indexOf("\"markers\":[")
-            if (startMarker < 0) return null
-            val arrayStart = json.indexOf('[', startMarker)
-            val arrayEnd = json.indexOf(']', arrayStart)
-            if (arrayStart < 0 || arrayEnd < 0) return null
-
-            val arrayContent = json.substring(arrayStart + 1, arrayEnd)
-            if (arrayContent.trim().isEmpty()) return emptyList()
-
-            return arrayContent.split("},").map { it.trim() + "}" }.map { parseMarker(it) }
-        }
-
-        private fun parseMarker(json: String): MarkerConfig {
-            val text = extractJsonString(json, "text", "")
-            val mode = enumValues<MarkerMode>().firstOrNull { it.name == extractJsonString(json, "mode", "TEXT") } ?: MarkerMode.TEXT
-            val pos = enumValues<RelativePosition>().firstOrNull { it.name == extractJsonString(json, "pos", "RIGHT") } ?: RelativePosition.RIGHT
-            val uri = extractJsonString(json, "uri", null)
-            return MarkerConfig(
-                markerText = text,
-                markerMode = mode,
-                templateUri = uri,
-                relativePosition = pos
-            )
-        }
-
-        private fun extractJsonString(json: String, key: String, default: String?): String? {
-            val pattern = "\"$key\":\"((?:[^\"\\\\]|\\\\.)*)\"".toRegex()
-            return pattern.find(json)?.groupValues?.get(1)?.replace("\\\\\"", "\"") ?: default
-        }
-
-        private fun extractJsonString(json: String, key: String, default: String): String {
-            return extractJsonString(json, key, default) ?: default
-        }
-
-        private fun extractJsonLong(json: String, key: String, default: Long): Long {
-            val pattern = "\"$key\":(\\d+)".toRegex()
-            return pattern.find(json)?.groupValues?.get(1)?.toLongOrNull() ?: default
-        }
-
-        private fun extractJsonInt(json: String, key: String, default: Int): Int {
-            val pattern = "\"$key\":(\\d+)".toRegex()
-            return pattern.find(json)?.groupValues?.get(1)?.toIntOrNull() ?: default
-        }
-
-        private fun escapeJson(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
     }
 }
