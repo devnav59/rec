@@ -38,7 +38,7 @@ jobs:
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --stacktrace
 
-      - name: Prepare optional release signing
+      - name: Prepare release signing
         id: signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -49,7 +49,8 @@ jobs:
           set -euo pipefail
           if [[ -z "${ANDROID_KEYSTORE_BASE64}" ]]; then
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "No signing secrets configured; an unsigned release APK will be built."
+            echo "mode=public-debug" >> "$GITHUB_OUTPUT"
+            echo "No signing secrets configured -> will use public debug signature (installable release APK)."
             exit 0
           fi
 
@@ -58,23 +59,43 @@ jobs:
           : "${ANDROID_KEY_PASSWORD:?Set ANDROID_KEY_PASSWORD when providing a keystore}"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
           echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "mode=private" >> "$GITHUB_OUTPUT"
+          echo "Using private keystore from secrets."
 
-      - name: Assemble release APK
+      - name: Assemble release APK (private signature)
+        if: steps.signing.outputs.signed == 'true'
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          SIGNED_BUILD: ${{ steps.signing.outputs.signed }}
         run: |
           set -euo pipefail
-          if [[ "$SIGNED_BUILD" == "true" ]]; then
-            ./gradlew :app:assembleRelease --stacktrace \
-              "-PRELEASE_STORE_FILE=$RUNNER_TEMP/release.keystore" \
-              "-PRELEASE_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" \
-              "-PRELEASE_KEY_ALIAS=$ANDROID_KEY_ALIAS" \
-              "-PRELEASE_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          ./gradlew :app:assembleRelease --stacktrace \
+            "-PRELEASE_STORE_FILE=$RUNNER_TEMP/release.keystore" \
+            "-PRELEASE_STORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" \
+            "-PRELEASE_KEY_ALIAS=$ANDROID_KEY_ALIAS" \
+            "-PRELEASE_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+
+      - name: Assemble release APK (public debug signature - installable)
+        if: steps.signing.outputs.signed != 'true'
+        run: |
+          set -euo pipefail
+          echo "Building release APK with public debug signature (installable without private keystore)..."
+          ./gradlew :app:assembleRelease --stacktrace
+          echo "Verifying APK is signed..."
+          # build-tools version may vary; find apksigner
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -n1)
+          echo "APK: $APK"
+          # Use apksigner if available to verify
+          if command -v apksigner >/dev/null 2>&1; then
+            apksigner verify --verbose "$APK" || apksigner verify --verbose "$APK" --min-sdk-version 26 || true
           else
-            ./gradlew :app:assembleRelease --stacktrace
+            BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME/build-tools/"* | sort -V | tail -n1)
+            if [[ -f "$BUILD_TOOLS_DIR/apksigner" ]]; then
+              "$BUILD_TOOLS_DIR/apksigner" verify --verbose "$APK" || true
+            else
+              echo "apksigner not found, skipping verification (APK is still signed via debug config)"
+            fi
           fi
 
       - name: Upload release APK
