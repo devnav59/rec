@@ -36,12 +36,20 @@ data class NumberDetection(
     val valueBounds: Bounds
 )
 
+/** Result of detecting a number for a specific marker. */
+data class MarkerResult(
+    val markerText: String,
+    val value: String,
+    val rawValue: String,
+    val found: Boolean
+)
+
 /**
  * Extracts decimal-looking values and converts Persian/Arabic digits to a stable representation.
  * It deliberately does not parse to Double, so large counters keep all of their digits.
  */
 object NumberParser {
-    private val numberPattern = Regex("""[+-]?\d(?:[\d,.]*\d)?""")
+    private val numberPattern = Regex("""[+-]?\d(?:[\\d,.]*\d)?""")
 
     fun extract(text: String): List<NumberMatch> {
         val normalized = normalizeCharacters(text)
@@ -85,6 +93,17 @@ object NumberParser {
         }
     }
 
+    /**
+     * Normalize the value to a stable English format with dot as decimal separator.
+     * This is the canonical form used for display and comparison.
+     */
+    fun toEnglishFormat(value: String): String {
+        val normalized = normalizeCharacters(value)
+        // Remove thousands separators (commas)
+        val withoutThousands = normalized.replace(",", "")
+        return withoutThousands
+    }
+
     fun toPersianDigits(value: String): String = buildString(value.length) {
         value.forEach { char ->
             append(if (char in '0'..'9') ('۰'.code + (char - '0')).toChar() else char)
@@ -94,10 +113,8 @@ object NumberParser {
 
 data class NumberMatch(val raw: String, val canonical: String)
 
-/**
- * Links OCR tokens to a moving marker. For text mode, marker bounds are found from OCR each
- * frame. For image mode, [findNearAnchor] accepts bounds supplied by TemplateMatcher.
- */
+/** Links OCR tokens to a moving marker. For text mode, marker bounds are found from OCR each
+ * frame. For image mode, [findNearAnchor] accepts bounds supplied by TemplateMatcher. */
 object ScreenValueDetector {
     fun hasTextAnchor(tokens: List<OcrToken>, markerText: String): Boolean {
         val markerKey = compact(markerText)
@@ -126,6 +143,70 @@ object ScreenValueDetector {
         position = position,
         exactMarkerKey = null
     )
+
+    /**
+     * Detect values for multiple markers in a single frame pass.
+     * Each marker is searched independently.
+     */
+    fun findMultipleMarkers(
+        tokens: List<OcrToken>,
+        markers: List<MarkerConfig>,
+        imageAnchor: Bounds?
+    ): List<MarkerResult> {
+        return markers.mapIndexed { index, marker ->
+            detectForMarker(tokens, index, marker, imageAnchor)
+        }
+    }
+
+    private fun detectForMarker(
+        tokens: List<OcrToken>,
+        markerIndex: Int,
+        marker: MarkerConfig,
+        imageAnchor: Bounds?
+    ): MarkerResult {
+        val detection = when (marker.markerMode) {
+            MarkerMode.TEXT -> {
+                val markerKey = compact(marker.markerText)
+                if (markerKey.isEmpty()) {
+                    NumberDetection("0", "0", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
+                } else {
+                    val anchors = tokens.filter { compact(it.text).contains(markerKey) }
+                    if (anchors.isEmpty()) {
+                        NumberDetection("", "", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
+                    } else {
+                        findForAnchors(tokens, anchors, marker.relativePosition, markerKey)
+                    }
+                }
+            }
+            MarkerMode.IMAGE -> {
+                imageAnchor?.let { anchor ->
+                    findForAnchors(
+                        tokens = tokens,
+                        anchors = listOf(OcrToken(text = "", bounds = anchor)),
+                        position = marker.relativePosition,
+                        exactMarkerKey = null
+                    )
+                } ?: NumberDetection("", "", Bounds(0, 0, 1, 1), Bounds(0, 0, 1, 1))
+            }
+        }
+
+        val value = detection.value
+        return if (value.isEmpty()) {
+            MarkerResult(
+                markerText = marker.markerText,
+                value = "",
+                rawValue = "",
+                found = false
+            )
+        } else {
+            MarkerResult(
+                markerText = marker.markerText,
+                value = NumberParser.toEnglishFormat(value),
+                rawValue = detection.rawValue,
+                found = true
+            )
+        }
+    }
 
     private fun findForAnchors(
         tokens: List<OcrToken>,
@@ -230,10 +311,7 @@ data class ValueChange(
     val isInitial: Boolean
 )
 
-/**
- * OCR occasionally emits a one-frame mistake. A new value is accepted only after it appears in
- * [requiredConsecutiveReads] consecutive frames, then produces one change event.
- */
+/** Manages value change detection with consecutive read confirmation. */
 class ValueChangeGate(private val requiredConsecutiveReads: Int = 2) {
     init {
         require(requiredConsecutiveReads > 0)
@@ -267,6 +345,12 @@ class ValueChangeGate(private val requiredConsecutiveReads: Int = 2) {
     }
 
     fun miss() {
+        pending = null
+        pendingCount = 0
+    }
+
+    fun reset() {
+        accepted = null
         pending = null
         pendingCount = 0
     }

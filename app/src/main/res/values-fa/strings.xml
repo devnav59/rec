@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">دیدبان عدد صفحه</string>
-    <string name="title">پایش یک عدد روی صفحه</string>
-    <string name="subtitle">یک نشانه را پیدا کنید؛ عدد نزدیک آن روی خود گوشی خوانده می‌شود و فقط تغییرهای تأییدشده اعلام می‌شوند.</string>
+    <string name="title">پایش چند عدد روی صفحه</string>
+    <string name="subtitle_multi">چند نشانه را پیدا کنید؛ اعداد نزدیک آن‌ها روی خود گوشی خوانده می‌شود و فقط تغییرهای تأییدشده اعلام می‌شوند.</string>
     <string name="privacy_notice">ضبط صفحه فقط پس از تأیید پنجرهٔ سیستمی اندروید شروع می‌شود. فریم‌ها روی همین گوشی پردازش می‌شوند و برنامه آن‌ها را آپلود یا ذخیره نمی‌کند. هنگام پایش، اعلان دائمی و دکمهٔ توقف پنجرهٔ شناور قابل مشاهده‌اند.</string>
+    <string name="section_markers_multi">۱. نشانه‌ها را اضافه کنید</string>
     <string name="section_anchor">۱. نشانه را انتخاب کنید</string>
     <string name="mode_text">متن / نماد خوانا با OCR</string>
     <string name="mode_image">تصویر یک نماد</string>
@@ -12,6 +13,9 @@
     <string name="choose_image">انتخاب تصویر برش‌خوردهٔ نماد</string>
     <string name="no_image_selected">تصویری برای نماد انتخاب نشده است</string>
     <string name="image_help">یک برش نزدیک از نماد، با همان اندازه‌ای که روی صفحه دیده می‌شود انتخاب کنید. تطبیق تصویر روی خود گوشی انجام می‌شود.</string>
+    <string name="add_marker">+ افزودن نشانه دیگر</string>
+    <string name="marker_item_title">نشانه %1$d</string>
+    <string name="remove_marker">حذف این نشانه</string>
     <string name="section_number">۲. جای عدد نسبت به نشانه</string>
     <string name="position_label">موقعیت عدد نسبت به نشانه</string>
     <string name="position_right">سمت راست</string>
@@ -19,7 +23,7 @@
     <string name="position_below">پایین</string>
     <string name="position_above">بالا</string>
     <string name="position_nearest">نزدیک‌ترین عدد</string>
-    <string name="interval_hint">فاصلهٔ اسکن به میلی‌ثانیه (۵۰۰ تا ۵۰۰۰)</string>
+    <string name="interval_hint">فاصلهٔ اسکن به میلی‌ثانیه (۲۰۰ تا ۵۰۰۰)</string>
     <string name="announce_initial">اولین عدد پیدا‌شده هم اعلام شود</string>
     <string name="section_start">۳. شروع با مجوز صریح</string>
     <string name="grant_overlay">اجازهٔ پنجرهٔ شناور</string>
@@ -34,12 +38,17 @@
     <string name="error_marker_required">متن/نماد نشانه را وارد کنید.</string>
     <string name="error_image_required">ابتدا تصویر برش‌خوردهٔ نماد را انتخاب کنید.</string>
     <string name="error_open_image">تصویر انتخاب‌شده باز نشد؛ آن را دوباره انتخاب کنید.</string>
+    <string name="error_no_markers">حداقل یک نشانه وارد کنید.</string>
     <string name="notification_channel_name">پایش عدد صفحه</string>
     <string name="notification_title">دیدبان عدد صفحه فعال است</string>
-    <string name="notification_text">در حال یافتن نشانه و عدد آن</string>
-    <string name="notification_value">عدد فعلی: %1$s</string>
+    <string name="notification_text">در حال یافتن نشانه‌ها و اعداد</string>
+    <string name="notification_value">نشانه %1$s: عدد %2$s</string>
+    <string name="notification_value_multi"><![CDATA[
+نشانه‌ها:
+%1$s
+    ]]></string>
     <string name="notification_stop">توقف</string>
-    <string name="service_waiting">در حال یافتن نشانه…</string>
+    <string name="service_waiting">در حال یافتن نشانه‌ها…</string>
     <string name="service_anchor_not_found">نشانه پیدا نشد</string>
     <string name="service_number_not_found">نشانه پیدا شد؛ عدد نزدیک آن پیدا نشد</string>
     <string name="service_started">پایش شروع شد</string>
@@ -47,10 +56,11 @@
     <string name="service_projection_ended">اندروید ضبط صفحه را متوقف کرد</string>
     <string name="service_capture_error">ضبط صفحه شروع نشد</string>
     <string name="service_template_error">تصویر نماد انتخاب‌شده قابل استفاده نیست</string>
-    <string name="speech_changed">عدد جدید: %1$s</string>
-    <string name="speech_first">عدد فعلی: %1$s</string>
+    <string name="speech_changed">عدد جدید %1$s</string>
+    <string name="speech_first">عدد فعلی %1$s</string>
     <string name="floating_stop">توقف پایش</string>
     <string name="floating_sound_on">بی‌صدا کردن اعلام</string>
     <string name="floating_sound_off">فعال کردن اعلام</string>
+    <string name="floating_value_format">%1$s: %2$s</string>
     <string name="image_picker_title">انتخاب تصویر نماد</string>
 </resources>

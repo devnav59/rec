@@ -25,12 +25,14 @@ class FloatingOverlay(
 
     private val valueView = TextView(context).apply {
         setTextColor(Color.WHITE)
-        textSize = 16f
+        textSize = 14f
         setPadding(dp(8), dp(4), dp(8), dp(4))
-        text = "…"
+        text = "..."
+        setLines(3)
+        setMaxLines(3)
     }
 
-    private val muteView = actionView("🔊").apply {
+    private val muteView = actionView("\uD83D\uDD0A").apply {  // 🔊
         contentDescription = context.getString(R.string.floating_sound_on)
         setOnClickListener {
             muted = !muted
@@ -39,15 +41,15 @@ class FloatingOverlay(
         }
     }
 
-    private val stopView = actionView("×").apply {
-        textSize = 25f
+    private val stopView = actionView("\u00D7").apply {  // ×
+        textSize = 20f
         contentDescription = context.getString(R.string.floating_stop)
         setOnClickListener { onStop() }
     }
 
     private val dragHandle = TextView(context).apply {
-        text = "◉"
-        textSize = 19f
+        text = "\u25CE"  // ◉
+        textSize = 17f
         setTextColor(Color.WHITE)
         gravity = Gravity.CENTER
         setPadding(dp(10), dp(5), dp(4), dp(5))
@@ -82,6 +84,10 @@ class FloatingOverlay(
         y = dp(120)
     }
 
+    // Store per-marker values for display
+    private val markerValues = mutableMapOf<Int, String>()
+    private var currentDisplayText = ""
+
     init {
         installDragHandler()
     }
@@ -93,13 +99,45 @@ class FloatingOverlay(
     }
 
     fun showSearching() {
-        valueView.text = "…"
+        valueView.text = "..."
         valueView.setTextColor(Color.rgb(224, 239, 255))
+        markerValues.clear()
+    }
+
+    fun showSearchingForMarker(markerIndex: Int) {
+        markerValues.remove(markerIndex)
+        updateDisplay()
     }
 
     fun showValue(value: String) {
-        valueView.text = NumberParser.toPersianDigits(value)
+        // For single marker (legacy support)
+        valueView.text = NumberParser.toEnglishFormat(value)
         valueView.setTextColor(Color.WHITE)
+        markerValues.clear()
+        markerValues[0] = value
+    }
+
+    fun showValueForMarker(markerIndex: Int, markerText: String, value: String) {
+        markerValues[markerIndex] = "$markerText: $value"
+        updateDisplay()
+    }
+
+    private fun updateDisplay() {
+        if (markerValues.isEmpty()) {
+            valueView.text = "..."
+            valueView.setTextColor(Color.rgb(224, 239, 255))
+            currentDisplayText = ""
+            return
+        }
+
+        // Build display text with all marker values
+        val sortedKeys = markerValues.keys.sorted()
+        val lines = sortedKeys.map { markerValues[it] ?: "" }
+        val displayText = lines.joinToString(" | ")
+
+        valueView.text = displayText
+        valueView.setTextColor(Color.WHITE)
+        currentDisplayText = displayText
     }
 
     fun remove() {
@@ -109,7 +147,7 @@ class FloatingOverlay(
     }
 
     private fun renderMuteState() {
-        muteView.text = if (muted) "🔇" else "🔊"
+        muteView.text = if (muted) "\uD83D\uDD05" else "\uD83D\uDD0A"  // 🔇 or 🔔
         muteView.contentDescription = context.getString(
             if (muted) R.string.floating_sound_off else R.string.floating_sound_on
         )

@@ -28,6 +28,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import android.widget.Toast
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
@@ -39,10 +40,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 
-/**
- * User-started foreground service. It captures only after MediaProjection consent, keeps a visible
- * notification/overlay, performs OCR in memory, and never writes screen frames to storage.
- */
+/** User-started foreground service. It captures only after MediaProjection consent, keeps a visible
+ * notification/overlay, performs OCR in memory, and never writes screen frames to storage. */
 class ScreenMonitorService : Service() {
     private lateinit var notificationManager: NotificationManager
     private lateinit var captureThread: HandlerThread
@@ -67,7 +66,11 @@ class ScreenMonitorService : Service() {
     private var lastFrameAt = 0L
     private var lastTransientStatusAt = 0L
     private var lastTransientStatus: String? = null
-    private var changeGate = ValueChangeGate()
+
+    // Track value changes for each marker independently
+    private val changeGates: MutableList<ValueChangeGate> = mutableListOf()
+    // Store last known values for each marker (English format)
+    private val lastValues: MutableList<String> = mutableListOf()
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -120,14 +123,27 @@ class ScreenMonitorService : Service() {
         }
 
         config = requestedConfig
+
+        // Initialize change gates for each marker
+        changeGates.clear()
+        lastValues.clear()
+        requestedConfig.markers.forEach { marker ->
+            changeGates.add(ValueChangeGate(requiredConsecutiveReads = 2))
+            lastValues.add("")
+        }
+
         try {
             // Android 10+ requires this service to enter the mediaProjection foreground type
             // before MediaProjection is obtained and its virtual display is created.
             startForegroundCompat(buildNotification())
 
-            if (requestedConfig.markerMode == MarkerMode.IMAGE) {
-                templateMatcher = requestedConfig.templateUri?.let(::loadTemplateMatcher)
-                checkNotNull(templateMatcher) { getString(R.string.service_template_error) }
+            if (requestedConfig.markers.any { it.markerMode == MarkerMode.IMAGE }) {
+                // Use the first image marker's template for detection
+                val imageMarker = requestedConfig.markers.firstOrNull { it.markerMode == MarkerMode.IMAGE }
+                templateMatcher = imageMarker?.templateUri?.let(::loadTemplateMatcher)
+                if (templateMatcher == null && imageMarker != null) {
+                    checkNotNull(templateMatcher) { getString(R.string.service_template_error) }
+                }
             }
 
             overlay = FloatingOverlay(
@@ -144,13 +160,12 @@ class ScreenMonitorService : Service() {
 
             createCapturePipeline(activeProjection)
             recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            changeGate = ValueChangeGate(requiredConsecutiveReads = 2)
             monitoring = true
             isMonitoring = true
             dispatchStatus(getString(R.string.service_started), running = true)
         } catch (error: Exception) {
             Log.w(TAG, "Could not start screen monitor", error)
-            val message = if (requestedConfig.markerMode == MarkerMode.IMAGE && templateMatcher == null) {
+            val message = if (requestedConfig.markers.any { it.markerMode == MarkerMode.IMAGE } && templateMatcher == null) {
                 getString(R.string.service_template_error)
             } else {
                 getString(R.string.service_capture_error)
@@ -215,16 +230,11 @@ class ScreenMonitorService : Service() {
             return
         }
 
-        val imageAnchor = if (activeConfig.markerMode == MarkerMode.IMAGE) {
+        // Find image anchor if any marker uses image mode
+        val imageAnchor = if (activeConfig.markers.any { it.markerMode == MarkerMode.IMAGE }) {
             templateMatcher?.find(bitmap)
         } else {
             null
-        }
-        if (activeConfig.markerMode == MarkerMode.IMAGE && imageAnchor == null) {
-            mainHandler.post { handleNoDetection(anchorFound = false) }
-            bitmap.recycleSafely()
-            frameInFlight.set(false)
-            return
         }
 
         val activeRecognizer = recognizer
@@ -238,27 +248,12 @@ class ScreenMonitorService : Service() {
             .addOnSuccessListener(analysisExecutor) { recognizedText ->
                 if (!monitoring) return@addOnSuccessListener
                 val tokens = recognizedText.toOcrTokens()
-                val anchorFound: Boolean
-                val detection = when (activeConfig.markerMode) {
-                    MarkerMode.TEXT -> {
-                        anchorFound = ScreenValueDetector.hasTextAnchor(tokens, activeConfig.markerText)
-                        ScreenValueDetector.findByText(
-                            tokens,
-                            activeConfig.markerText,
-                            activeConfig.relativePosition
-                        )
-                    }
-
-                    MarkerMode.IMAGE -> {
-                        anchorFound = imageAnchor != null
-                        ScreenValueDetector.findNearAnchor(
-                            tokens,
-                            checkNotNull(imageAnchor),
-                            activeConfig.relativePosition
-                        )
-                    }
-                }
-                mainHandler.post { handleDetection(detection, anchorFound) }
+                val detections = ScreenValueDetector.findMultipleMarkers(
+                    tokens = tokens,
+                    markers = activeConfig.markers,
+                    imageAnchor = imageAnchor
+                )
+                mainHandler.post { handleDetection(detections, imageAnchor != null) }
             }
             .addOnFailureListener(analysisExecutor) { error ->
                 Log.w(TAG, "OCR failed for captured frame", error)
@@ -270,30 +265,67 @@ class ScreenMonitorService : Service() {
             }
     }
 
-    private fun handleDetection(detection: NumberDetection?, anchorFound: Boolean) {
+    private fun handleDetection(detections: List<MarkerResult>, hasImageAnchor: Boolean) {
         if (!monitoring) return
-        if (detection == null) {
-            handleNoDetection(anchorFound)
+
+        var allFound = true
+        val displayLines = mutableListOf<String>()
+
+        detections.forEachIndexed { index, detection ->
+            if (detection.found) {
+                // Show value in overlay
+                val englishValue = NumberParser.toEnglishFormat(detection.value)
+                overlay?.showValueForMarker(index, detection.markerText, englishValue)
+
+                // Check for changes using the gate
+                val change = changeGates[index].offer(englishValue) ?: return@forEachIndexed
+
+                if (change.isInitial) {
+                    lastValues[index] = englishValue
+                } else {
+                    lastValues[index] = englishValue
+
+                    // Update notification
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification())
+
+                    // Speak if not muted and not initial (or initial announcement enabled)
+                    if (!muted && config?.announceInitialValue == true && change.isInitial) {
+                        speak(englishValue, true, index)
+                    } else if (!muted && !change.isInitial) {
+                        speak(englishValue, false, index)
+                    }
+                }
+                displayLines.add(getString(R.string.floating_value_format, detection.markerText, englishValue))
+            } else {
+                allFound = false
+                changeGates[index].miss()
+                overlay?.showSearchingForMarker(index)
+            }
+        }
+
+        if (!allFound) {
+            handleNoDetection(hasImageAnchor)
             return
         }
 
-        overlay?.showValue(detection.value)
-        val change = changeGate.offer(detection.value) ?: return
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(change.current))
-        dispatchStatus(getString(R.string.notification_value, NumberParser.toPersianDigits(change.current)), running = true)
-
-        if (!muted && (!change.isInitial || config?.announceInitialValue == true)) {
-            speak(change.current, change.isInitial)
-        }
+        // Update notification with all marker values
+        notificationManager.notify(NOTIFICATION_ID, buildNotification())
+        dispatchStatus(
+            if (displayLines.size == 1) {
+                getString(R.string.notification_value, displayLines[0], "")
+            } else {
+                displayLines.joinToString("\n")
+            },
+            running = true
+        )
     }
 
-    private fun handleNoDetection(anchorFound: Boolean) {
+    private fun handleNoDetection(hasImageAnchor: Boolean) {
         if (!monitoring) return
-        changeGate.miss()
         overlay?.showSearching()
         reportTransient(
             getString(
-                if (anchorFound) R.string.service_number_not_found else R.string.service_anchor_not_found
+                if (hasImageAnchor) R.string.service_number_not_found else R.string.service_anchor_not_found
             )
         )
     }
@@ -306,7 +338,7 @@ class ScreenMonitorService : Service() {
         dispatchStatus(message, running = true)
     }
 
-    private fun speak(value: String, initial: Boolean) {
+    private fun speak(value: String, initial: Boolean, markerIndex: Int) {
         if (!textToSpeechReady) return
         val spokenValue = NumberParser.toPersianDigits(value)
         val phrase = getString(
@@ -317,7 +349,7 @@ class ScreenMonitorService : Service() {
             phrase,
             TextToSpeech.QUEUE_FLUSH,
             null,
-            "screen-number-${SystemClock.elapsedRealtime()}"
+            "screen-number-${markerIndex}-${SystemClock.elapsedRealtime()}"
         )
     }
 
@@ -348,7 +380,7 @@ class ScreenMonitorService : Service() {
         notificationManager.createNotificationChannel(channel)
     }
 
-    private fun buildNotification(value: String? = null): Notification {
+    private fun buildNotification(): Notification {
         val openAppIntent = PendingIntent.getActivity(
             this,
             1,
@@ -365,14 +397,28 @@ class ScreenMonitorService : Service() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val content = value?.let {
-            getString(R.string.notification_value, NumberParser.toPersianDigits(it))
-        } ?: getString(R.string.notification_text)
+
+        val contentText = if (lastValues.isNotEmpty() && lastValues.any { it.isNotEmpty() }) {
+            val lines = lastValues.mapIndexed { index, value ->
+                if (value.isNotEmpty()) {
+                    val marker = config?.markers?.getOrNull(index)
+                    val markerName = marker?.markerText ?: "نشانه $index"
+                    getString(R.string.floating_value_format, markerName, value)
+                } else {
+                    val marker = config?.markers?.getOrNull(index)
+                    val markerName = marker?.markerText ?: "نشانه $index"
+                    "$markerName: ▮▮▮"
+                }
+            }
+            lines.joinToString("\n")
+        } else {
+            getString(R.string.notification_text)
+        }
 
         return Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_watch)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(content)
+            .setContentText(contentText)
             .setContentIntent(openAppIntent)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setOngoing(true)
