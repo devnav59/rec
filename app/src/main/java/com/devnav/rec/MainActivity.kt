@@ -50,8 +50,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
+        try {
+            setContentView(R.layout.activity_main)
+            preferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
 
         markersContainer = findViewById(R.id.markersContainer)
         addMarkerButton = findViewById(R.id.addMarkerButton)
@@ -66,6 +67,11 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.grantOverlayButton).setOnClickListener { openOverlaySettings() }
         findViewById<Button>(R.id.startButton).setOnClickListener { beginMonitoringFlow() }
         findViewById<Button>(R.id.stopButton).setOnClickListener { stopMonitoring() }
+        } catch (e: Exception) {
+            // Prevent immediate crash on startup
+            android.util.Log.e("MainActivity", "Startup crash", e)
+            finish()
+        }
     }
 
     override fun onStart() {
